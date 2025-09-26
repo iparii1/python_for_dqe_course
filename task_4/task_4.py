@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, date
 from task_3.task_3 import normalize_text
-
+import json
 
 class NewsFeed:
     def __init__(self, text: str):
@@ -44,17 +44,17 @@ class PrivateAd(NewsFeed):
         return f'\n\nPrivate Ad ----------\n{self.text}\nActual until: {formatted_date}, {days_left} days left'
 
 
-class FileProcessor:
+class CSVProcessor:
     def __init__(self, file_path: str):
         self.file_path = file_path
 
-    def read_file(self) -> list[str]:
+
+    def parse_records(self) -> list[NewsFeed]:
         with open(self.file_path, 'r') as file:
             lines = [line.strip() for line in file if line.strip()]
-        return lines
 
-    def parse_records(self, lines: list[str]) -> list[NewsFeed]:
         parsed_records = []
+
         for line in lines:
             record_type, text, field = line.split('|')
             record_type = record_type.strip().lower()
@@ -67,9 +67,8 @@ class FileProcessor:
                 continue
         return parsed_records
 
-    def process_file(self):
-        lines = self.read_file()
-        records = self.parse_records(lines)
+    def process_file(self) -> None:
+        records = self.parse_records()
         for record in records:
             record.save_result()
         os.remove(self.file_path)
@@ -77,7 +76,7 @@ class FileProcessor:
 
 
 def select_input_file(default_folder: str = 'input_files', default_file: str = 'records.txt') -> str:
-    print("Do you want to use the default file? (Default: input_files/records.txt)")
+    print("Do you want to use the default file? (Default folder: input_files)")
     user_input = input("Enter 'yes' for default or 'no' for a custom file: ").strip().lower()
 
     if user_input == 'yes':
@@ -95,6 +94,45 @@ def select_input_file(default_folder: str = 'input_files', default_file: str = '
         exit()
 
 
+class JSONProcessor:
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def read_json(self, file_path: str) -> dict | list | None:
+        try:
+            with open(file_path, 'r') as file:
+                content = json.load(file)
+            return content
+        except json.JSONDecodeError:
+            print('File is empty or invalid.')
+            return None
+        except Exception as e:
+            print(f'Unexpected error occurred {e}')
+
+    def save_data(self, content: list | dict) -> None:
+        if content:
+            items = [content] if isinstance(content, dict) else content
+            for item in items:
+                if item['name'].strip().lower() == 'news':
+                    text, city = item['text'], item['city']
+                    record = News(text, city)
+                    record.save_result()
+                elif item['name'].strip().lower() == 'private ad':
+                    text, expiration_date = item['text'], item['expiration']
+                    record = PrivateAd(text, expiration_date)
+                    record.save_result()
+                else:
+                     continue
+        else:
+            print("Can't process empty file")
+
+    def process_file(self) -> None:
+        content = self.read_json(self.file_path)
+        self.save_data(content)
+        os.remove(self.file_path)
+        print(f"Processed file '{self.file_path}' and removed it.")
+
+
 def main():
     print("Welcome to the News Feed Tool!")
     print("1 - Process records from a file")
@@ -103,11 +141,20 @@ def main():
     choice = input("Please select option 1 or 2: ").strip()
 
     if choice == '1':
-        default_folder = 'input_files'
-        default_file = 'records.txt'
-        file_path = select_input_file(default_folder, default_file)
-        processor = FileProcessor(file_path)
-        processor.process_file()
+        print("1 - csv\n2 - json")
+        file_selection = input("Select file type: ")
+        if file_selection == '1':
+            default_folder = 'input_files'
+            default_file = 'records.txt'
+            file_path = select_input_file(default_folder, default_file)
+            processor = CSVProcessor(file_path)
+            processor.process_file()
+        elif file_selection == '2':
+            default_folder = 'input_files2'
+            default_file = 'json_input.json'
+            file_path = select_input_file(default_folder, default_file)
+            processor = JSONProcessor(file_path)
+            processor.process_file()
     elif choice == '2':
         print("1 - News\n2 - Private Ad")
         record_type = input("Select the type of record to add - 1 for News, 2 for Private Ad): ").strip()
