@@ -2,6 +2,8 @@ import os
 from datetime import datetime, date
 from task_3.task_3 import normalize_text
 import json
+import xml.etree.ElementTree as ET
+
 
 class NewsFeed:
     def __init__(self, text: str):
@@ -44,10 +46,27 @@ class PrivateAd(NewsFeed):
         return f'\n\nPrivate Ad ----------\n{self.text}\nActual until: {formatted_date}, {days_left} days left'
 
 
-class CSVProcessor:
+class FileProcessor:
     def __init__(self, file_path: str):
         self.file_path = file_path
 
+    def parse_records(self):
+        pass
+
+    def process_file(self) -> None:
+        records = self.parse_records()
+        if records:
+            for record in records:
+                record.save_result()
+            os.remove(self.file_path)
+            print(f"Processed file '{self.file_path}' and removed it.")
+        else:
+            print('No records received!')
+
+
+class CSVProcessor(FileProcessor):
+    def __init__(self, file_path: str):
+        super().__init__(file_path)
 
     def parse_records(self) -> list[NewsFeed]:
         with open(self.file_path, 'r') as file:
@@ -66,13 +85,6 @@ class CSVProcessor:
             else:
                 continue
         return parsed_records
-
-    def process_file(self) -> None:
-        records = self.parse_records()
-        for record in records:
-            record.save_result()
-        os.remove(self.file_path)
-        print(f"Processed file '{self.file_path}' and removed it.")
 
 
 def select_input_file(default_folder: str = 'input_files', default_file: str = 'records.txt') -> str:
@@ -94,43 +106,68 @@ def select_input_file(default_folder: str = 'input_files', default_file: str = '
         exit()
 
 
-class JSONProcessor:
+class JSONProcessor(FileProcessor):
     def __init__(self, file_path: str):
-        self.file_path = file_path
+        super().__init__(file_path)
 
-    def read_json(self, file_path: str) -> dict | list | None:
+    def read_json(self) -> dict | list | None:
         try:
-            with open(file_path, 'r') as file:
+            with open(self.file_path, 'r') as file:
                 content = json.load(file)
             return content
         except json.JSONDecodeError:
             print('File is empty or invalid.')
-            return None
+
         except Exception as e:
             print(f'Unexpected error occurred {e}')
 
-    def save_data(self, content: list | dict) -> None:
+    def save_data(self, content: list | dict):
         if content:
             items = [content] if isinstance(content, dict) else content
+            parsed_records = []
             for item in items:
                 if item['name'].strip().lower() == 'news':
                     text, city = item['text'], item['city']
                     record = News(text, city)
-                    record.save_result()
+                    parsed_records.append(record)
                 elif item['name'].strip().lower() == 'private ad':
                     text, expiration_date = item['text'], item['expiration']
                     record = PrivateAd(text, expiration_date)
-                    record.save_result()
+                    parsed_records.append(record)
                 else:
-                     continue
+                    continue
+            return parsed_records
         else:
             print("Can't process empty file")
 
-    def process_file(self) -> None:
-        content = self.read_json(self.file_path)
-        self.save_data(content)
-        os.remove(self.file_path)
-        print(f"Processed file '{self.file_path}' and removed it.")
+
+class XMLProcessor(FileProcessor):
+    def __init__(self, file_path: str):
+        super().__init__(file_path)
+
+    def parse_records(self) -> list[NewsFeed]:
+        try:
+            tree = ET.parse(self.file_path)
+        except FileNotFoundError:
+            print(f'File not found: {self.file_path}')
+        root = tree.getroot()
+        items = root.findall('item')
+
+        parsed_records = []
+        for item in items:
+            news_type = item.find('type').text.strip()
+            news = (item.find('news').text or '').strip()
+            if news_type.lower() == 'news':
+                city = (item.find('city').text or 'Unknown City').strip()
+                record = News(news, city)
+                parsed_records.append(record)
+            elif news_type.lower() == 'private ad':
+                expiration_date = (item.find('expiration').text or '31/12/2099').strip()
+                record = PrivateAd(news, expiration_date)
+                parsed_records.append(record)
+            else:
+                continue
+        return parsed_records
 
 
 def main():
@@ -141,7 +178,7 @@ def main():
     choice = input("Please select option 1 or 2: ").strip()
 
     if choice == '1':
-        print("1 - csv\n2 - json")
+        print("1 - csv\n2 - json\n3 - xml")
         file_selection = input("Select file type: ")
         if file_selection == '1':
             default_folder = 'input_files'
@@ -154,6 +191,12 @@ def main():
             default_file = 'json_input.json'
             file_path = select_input_file(default_folder, default_file)
             processor = JSONProcessor(file_path)
+            processor.process_file()
+        elif file_selection == '3':
+            default_folder = 'input_files'
+            default_file = 'xml_input.xml'
+            file_path = select_input_file(default_folder, default_file)
+            processor = XMLProcessor(file_path)
             processor.process_file()
     elif choice == '2':
         print("1 - News\n2 - Private Ad")
